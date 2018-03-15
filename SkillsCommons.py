@@ -1,17 +1,11 @@
 import urllib2
-import math
 import xml.etree.ElementTree as ET
 
-BASE_URL = 'https://www.skillscommons.org'
 
-# SEARCH_URL = BASE_URL + '/discover?XML'
-SEARCH_RPP = 10
+BASE_URL = 'https://www.skillscommons.org'
 SEARCH_URL = BASE_URL + '/discover?filtertype=type&filter_relational_operator=equals' + \
              '&filter=Online+Course&sort_by=dc.date.issued_dt&order=asc&rpp={}&page={}&XML'
-SEARCH_OPTION_TAG = '{http://di.tamu.edu/DRI/1.0/}option'
-
-COURSE_METS_URL = BASE_URL + '/metadata/handle/taaccct/{}/mets.xml'  # note: must .format()
-COURSE_METS_FIELD_TAG = '{http://www.dspace.org/xmlns/dspace/dim}field'
+SEARCH_RPP = 400
 
 
 def get_course_search_url(rpp, page):
@@ -41,45 +35,18 @@ def get_fields(xml_elt, field_tag='field'):
 
 
 def get_course_listing(page=1):
-    # response = urllib2.urlopen(SEARCH_URL)
-    # xml_raw = response.read()
-    # print xml_raw
-    # xml_parsed = ET.fromstring(xml_raw)
-    # print xml_parsed.tag, xml_parsed.text
-    # for child in xml_parsed:
-    #     print child.tag, child.attrib
-    # for neighbor in xml_parsed.iter():
-    #     print neighbor.tag, neighbor.attrib
-
-    id__title = {}
-    # # <option returnValue="taaccct/1418">Cyber-Technology Pathways Across Maryland (CPAM)</option>
-    # # <option returnValue="taaccct/5899">DC Construction Academy & DC Hospitality Academy</option>
-    # for i, xml_option in enumerate(xml_parsed.iter(SEARCH_OPTION_TAG)):
-    #     # print xml_option.tag, xml_option.text
-    #     title = xml_option.text
-    #     retval = xml_option.attrib['returnValue']
-    #     if retval.startswith('taaccct/'):
-    #         _, idx = retval.split('/')
-    #         try:
-    #             print "{} {} {}".format(i, idx, title)
-    #         except UnicodeEncodeError as err:
-    #             print "{} {} {}".format(i, idx, title.encode('ascii', 'ignore'))
-    #         id__title[idx] = title
-
     url = get_course_search_url(SEARCH_RPP, page)
     print url
     response = urllib2.urlopen(url)
     xml_raw = response.read()
     xml_parsed = ET.fromstring(xml_raw)
-    print_tag_tree(xml_parsed)
+    # print_tag_tree(xml_parsed)
     # print_children_tags(xml_parsed)
 
     xml_results = xml_parsed.find('alchemy/results')
     # print_children_tags(xml_results)
 
-
     results = []  # (id, fields { name->val }, files [ (name, lab, type, url) ])
-
     for xml_result in xml_results.findall('{http://www.loc.gov/METS/}METS'):
         res_id = xml_result.attrib['ID']
 
@@ -102,80 +69,29 @@ def get_course_listing(page=1):
 
         results.append((res_id, res_fields, res_files))
 
-    print "got {} results".format(len(results))
+    res_end = int(xml_results.find('end').text)
+    res_tot = int(xml_results.find('total').text)
+    if res_end < res_tot:
+        print "got {} results (up to {}/{}), getting more".format(len(results), res_end, res_tot)
+        results.extend(get_course_listing(page + 1))
 
-    for res_id, res_fields, res_files in results:
-        print "COURSE", res_id
-        for field, val in sorted(res_fields.items()):
-            print "\t", field, "->", val
-        print "\tfiles:"
-        for file_tup in res_files:
-            print "\t\t", file_tup
-        print "\n"
-
-
-
-
-
-
-
-
-    #
-    # res_end = int(xml_results.find('end').text)
-    # res_tot = int(xml_results.find('total').text)
-    # if res_end < res_tot:
-    #     results += get_course_listing(page + 1)
-
-
-
-    return id__title
-
-
-def get_course(idx):
-    response = urllib2.urlopen(COURSE_METS_URL.format(idx))
-    xml_raw = response.read()
-    print xml_raw
-    xml_parsed = ET.fromstring(xml_raw)
-
-    for neighbor in xml_parsed.iter():
-        print neighbor.tag, neighbor.attrib
-
-    fields = {}
-    for i, mets_field in enumerate(xml_parsed.iter(COURSE_METS_FIELD_TAG)):
-        field_name = mets_field.attrib['element']
-        if 'qualifier' in mets_field.attrib:
-            field_name += " " + mets_field.attrib['qualifier']
-        field_val = mets_field.text
-        fields[field_name] = field_val
-
-    file_tups = []
-    for i, mets_file in enumerate(xml_parsed.iter('mets:FLocat')):
-        title = mets_file.attrib.get('xlink:title')
-        label = mets_file.attrib.get('xlink:label')
-        url = BASE_URL + mets_file.attrib['xlink:href']
-        file_tups.append((title, label, url))
-
-    return fields, file_tups
-
-
+    return results
 
 
 ############################################
 
 if __name__ == '__main__':
 
-    course_id__title = get_course_listing()
+    results = get_course_listing()
+    print "got {} results".format(len(results))
 
-    for course_id, title in course_id__title.items():
-        print "course", course_id, title
-        fields, file_tups = get_course(course_id)
-
-        print "fields: "
-        for n, v in fields.items():
-            print "\t", n, v
-        print "files: "
-        for tit, lab, val in file_tups:
-            print "\t", tit, lab, val
+    for res_id, res_fields, res_files in results[:5]:
+        print "COURSE", res_id
+        for field, val in sorted(res_fields.items()):
+            print "\t", field, "->", val
+        print "\tfiles:"
+        for file_tup in res_files:
+            print "\t\t", file_tup
         print "\n"
 
 
