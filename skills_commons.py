@@ -85,6 +85,7 @@ if __name__ == '__main__':
     results = get_course_listing()
     print "got {} results".format(len(results))
 
+
     for res_id, res_fields, res_files in results[:5]:
         print "COURSE", res_id
         for field, val in sorted(res_fields.items()):
@@ -93,6 +94,15 @@ if __name__ == '__main__':
         for file_tup in res_files:
             print "\t\t", file_tup
         print "\n"
+
+
+    mimetype__count = {}
+    for res_id, res_fields, res_files in results:
+        for file_tup in res_files:
+            mimetype = file_tup[2]
+            mimetype__count[mimetype] = mimetype__count.get(mimetype, 0) + 1
+    for mimetype, count in sorted(mimetype__count.items(), key=lambda x: x[1], reverse=True):
+        print mimetype, count
 
 
 
