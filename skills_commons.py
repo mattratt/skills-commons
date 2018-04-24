@@ -20,8 +20,10 @@ SEARCH_URL = BASE_URL + '/discover?filtertype=type&filter_relational_operator=eq
              '&filter=Online+Course&sort_by=dc.date.issued_dt&order=asc&rpp={}&page={}&XML'
 SEARCH_RPP = 400
 SKIP_FILE_EXTS = {'.png', '.gif', '.jpg', '.bmp',
-                  '.swf', '.mp3', '.mp4', '.xml', '.css', '.js',
-                  '.thmx', '.accdb', '.jar'}
+                  '.swf', '.mp3', '.mp4', '.m4v', '.mpg', '.mov', '.wmv' 
+                  '.dll', '.exe',
+                  '.thmx', '.accdb',
+                  '.xml', '.css', '.js', '.cpp', '.jar'}
 
 def get_course_search_url(rpp, page):
     return SEARCH_URL.format(rpp, page)
