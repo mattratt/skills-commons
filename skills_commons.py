@@ -9,7 +9,7 @@ import logging
 import os.path
 import xml.etree.ElementTree as ET
 import textract
-from zipfile import ZipFile
+from zipfile import ZipFile, BadZipfile
 
 
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(message)s")
@@ -19,7 +19,9 @@ BASE_URL = 'https://www.skillscommons.org'
 SEARCH_URL = BASE_URL + '/discover?filtertype=type&filter_relational_operator=equals' + \
              '&filter=Online+Course&sort_by=dc.date.issued_dt&order=asc&rpp={}&page={}&XML'
 SEARCH_RPP = 400
-
+SKIP_FILE_EXTS = {'.png', '.gif', '.jpg', '.bmp',
+                  '.swf', '.mp3', '.mp4', '.xml', '.css',
+                  '.thmx', '.accdb', '.jar'}
 
 def get_course_search_url(rpp, page):
     return SEARCH_URL.format(rpp, page)
@@ -137,10 +139,15 @@ def tally_file_errors(file_name):
 # zips), it just globs the text together
 def get_text_file(file_path):
     ret_text = None
-    if file_path.lower().endswith('.zip') or file_path.lower().endswith('.imscc'):
+
+    _, ext = os.path.splitext(file_path.lower())
+    # logging.debug("\t\texamining {} ({})".format(file_path, ext))
+
+    # if file_path.lower().endswith('.zip') or file_path.lower().endswith('.imscc'):
+    if (ext == '.zip') or (ext == '.imscc'):
         zip_file_texts = ""
         tempdir = tempfile.mkdtemp()
-        logging.debug("\t\tunzipping {} to {}".format(file_path, tempdir))
+        # logging.debug("\t\tunzipping {} to {}".format(file_path, tempdir))
         with ZipFile(file_path, 'r') as zip:
             zip.extractall(tempdir)
             zip_file_paths = [ os.path.join(tempdir, fn) for fn in zip.namelist() ]
@@ -152,15 +159,20 @@ def get_text_file(file_path):
         shutil.rmtree(tempdir)
         ret_text = zip_file_texts
 
+    elif ext in SKIP_FILE_EXTS:
+        tally_file_info(file_path)
+        # logging.debug("\t\tskipping (ext) {}".format(file_path))
+
     else:
         tally_file_info(file_path)
-        logging.debug("\t\textracting text from {}".format(file_path))
+        # logging.debug("\t\textracting text from {}".format(file_path))
         try:
             ret_text = textract.process(file_path)
         except (textract.exceptions.ExtensionNotSupported, textract.exceptions.ShellError) as err:
-            logging.debug("\t\tcan't extract file file {}".format(file_path))
+            # logging.debug("\t\tcan't extract file file {}".format(file_path))
+            logging.debug("\t\tcan't extract file file {}: {}".format(file_path, err))
             tally_file_errors(file_path)
-        except (IOError, TypeError) as err:
+        except (IOError, TypeError, BadZipfile) as err:
             logging.debug("\t\tcan't extract file file {}: {}".format(file_path, err))
             tally_file_errors(file_path)
     return ret_text
@@ -170,9 +182,14 @@ def get_text_url(file_url):
     tempdir = tempfile.mkdtemp()
     _, file_name = os.path.split(urlparse.urlsplit(file_url).path)
 
-    logging.debug("\t\tdownloading {} => {}".format(file_url, file_name))
-    url_fname, url_headers = urllib.urlretrieve(file_url, os.path.join(tempdir, file_name))
-    text = get_text_file(url_fname)
+    _, ext = os.path.splitext(file_name.lower())
+    if ext in SKIP_FILE_EXTS:
+        logging.debug("\t\tskipping (ext) {} => {}".format(file_url, file_name))
+    else:
+        logging.debug("\t\tdownloading {} => {}".format(file_url, file_name))
+        url_fname, url_headers = urllib.urlretrieve(file_url, os.path.join(tempdir, file_name))
+        text = get_text_file(url_fname)
+
     shutil.rmtree(tempdir)
     return text
 
@@ -255,7 +272,7 @@ if __name__ == '__main__':
     print_dict(file_ext__count, reverse=True)
 
 
-    file_err_percs = { float(file_ext__err_count.get(k, 0))/count
+    file_err_percs = { k: float(file_ext__err_count.get(k, 0))/count
                        for k, count in file_ext__count.items() }
     print_dict(file_err_percs)
 
