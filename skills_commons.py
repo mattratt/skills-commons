@@ -2,27 +2,16 @@ import sys
 import urllib
 import urlparse
 import urllib2
+import contextlib
 import shutil
 import os
+import csv
 import tempfile
-import logging
 import logging.config
 import os.path
 import xml.etree.ElementTree as ET
 import textract
 from zipfile import ZipFile, BadZipfile
-
-
-# logging.config.dictConfig({ 'version': 1, 'disable_existing_loggers': True })
-# logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-# logging.basicConfig(level=logging.WARN)
-log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
-ch = logging.StreamHandler()
-ch.setLevel(logging.DEBUG)
-formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
-ch.setFormatter(formatter)
-log.addHandler(ch)
 
 
 BASE_URL = 'https://www.skillscommons.org'
@@ -39,6 +28,86 @@ EXT_WHITELIST = {'.csv', '.doc', '.docx', '.eml', '.epub', '.gif', '.htm', '.htm
                  '.pdf', '.png', '.pptx', '.ps', '.psv', '.rtf', '.tff', '.tif',
                  '.tiff', '.tsv', '.txt', '.wav', '.xls', '.xlsx',
                  '.zip', '.imscc'}  # all but the last two come from textract; the zips we handle
+
+COURSE_FIELDS = [
+    'identifier uri',
+    'date available',
+    'description abstract',
+    'creditType',
+    'interactivityType',
+    'title',
+    'description sponsorship',
+    'credentialType',
+    'type',
+    'date accessioned',
+    'date issued',
+    'publisher',
+    'instructional',
+    'license',
+    'level',
+    'industry',
+    'occupation',
+    'language iso,'                  
+    'contributor author',
+    'round',
+    'ada textAdjustmentCompatible',
+    'OCDQuality',
+    'timeRequired',
+    'SMQuality',
+    'subject',
+    'ada hyperlinkActive',
+    'quality',
+    'ada contrast',
+    'ada color',
+    'ada textAdjustable',
+    'ada readingOrder',
+    'ada noFlickering',
+    'ada structuralMarkupText',
+    'ada structuralMarkupLists',
+    'ada textAccess',
+    'ada languageMarkup',
+    'qualityNote',
+    'type secondary',
+    'ada decorativeImages',
+    'ada tableMarkup',
+    'ada multimediaTranscript',
+    'ada imageAltText',
+    'ada multimediaTextTrack',
+    'ada multimediaAccessiblePlayer',
+    'ada stemMarkup',
+    'ada complextImageText',
+    'ada stemNotationMarkup',
+    'ada interactiveMarkup',
+    'ada keyboardInteractive',
+    'ada interactivePromptText',
+    'ada readingLayoutCompatible',
+    'projectName',
+    'courseNote',
+    'ada statement',
+    'ada readingLayoutPageNumbers',
+    'ada readingLayoutPageNumbersAlt',
+    'materialsReuse',
+    'ada languageMarkupAlt',
+    'ccby',
+    'ada formalPolicy',
+    'ada structuralMarkupReaders',
+    'date updated',
+    'license secondary',
+    'archive',
+    'rightsHolder',
+    'ada organization',
+    'object uri',
+]
+
+
+
+log = logging.getLogger(__name__)
+log.setLevel(logging.DEBUG)
+ch = logging.StreamHandler()
+ch.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+ch.setFormatter(formatter)
+log.addHandler(ch)
 
 
 def get_course_search_url(rpp, page):
@@ -67,7 +136,7 @@ def get_fields(xml_elt, field_tag='field'):
     return fields
 
 
-def get_course_listing(rpp, max_res=sys.maxint, page=1):
+def get_course_listing(rpp=SEARCH_RPP, max_res=sys.maxint, page=1):
     url = get_course_search_url(rpp, page)
     print url
     response = urllib2.urlopen(url)
@@ -111,34 +180,6 @@ def get_course_listing(rpp, max_res=sys.maxint, page=1):
     return results
 
 
-# def get_file_text(file_name, file_url, working_dir='temp_dir'):
-#     if not os.path.exists(working_dir):
-#         os.makedirs(working_dir)
-#
-#     file_path_local = os.path.join(working_dir, file_name)
-#     print "downloading {} => {}".format(file_url, file_path_local)
-#     fname, headers = urllib.urlretrieve(file_url, file_path_local)
-#     # print "got {} with headers {}".format(fname, headers)
-#
-#     if file_name.endswith('.zip') or file_name.endswith('.imscc:'):
-#         with ZipFile(file_path_local, 'r') as zip:
-#             zip.extractall(working_dir)
-#             file_paths = [ os.path.join(working_dir, fn) for fn in zip.namelist() ]
-#     else:
-#         file_paths = [fname]
-#
-#     print "extracting text from", "\n\t".join(file_paths)
-#     file_text = ""
-#     for fp in file_paths:
-#         try:
-#             file_text += textract.process(fp) + "\n"
-#         except (textract.exceptions.ExtensionNotSupported, textract.exceptions.ShellError) as err:
-#             print "can't extract file file {}".format(fp)
-#             continue
-#         os.remove(fp)
-#     return file_text
-
-
 file_ext__count = {}
 def tally_file_info(file_name):
     global file_ext__count
@@ -164,9 +205,8 @@ def get_text_file(file_path):
     # if file_path.lower().endswith('.zip') or file_path.lower().endswith('.imscc'):
     if (ext == '.zip') or (ext == '.imscc'):
         zip_file_texts = ""
-        tempdir = tempfile.mkdtemp()
         log.debug("\t\tunzipping {} to {}".format(file_path, tempdir))
-        with ZipFile(file_path, 'r') as zip:
+        with temp_dir() as tempdir, ZipFile(file_path, 'r') as zip:
             zip.extractall(tempdir)
             zip_file_paths = [ os.path.join(tempdir, fn) for fn in zip.namelist() ]
 
@@ -175,7 +215,6 @@ def get_text_file(file_path):
                 text = get_text_file(zip_file_path)
                 if text:
                     zip_file_texts += text + "\n"
-        shutil.rmtree(tempdir)
         ret_text = zip_file_texts
 
     elif (ext in EXT_BLACKLIST) or (ext not in EXT_WHITELIST):
@@ -198,34 +237,16 @@ def get_text_file(file_path):
 
 
 def get_text_url(file_url):
-    tempdir = tempfile.mkdtemp()
     _, file_name = os.path.split(urlparse.urlsplit(file_url).path)
-
     _, ext = os.path.splitext(file_name.lower())
     if (ext in EXT_BLACKLIST) or (ext not in EXT_WHITELIST):
         log.debug("\t\tskipping (ext) {} => {}".format(file_url, file_name))
     else:
         log.debug("\t\tdownloading {} => {}".format(file_url, file_name))
-        url_fname, url_headers = urllib.urlretrieve(file_url, os.path.join(tempdir, file_name))
-        text = get_text_file(url_fname)
-
-    shutil.rmtree(tempdir)
+        with temp_dir() as tempdir:
+            url_fname, url_headers = urllib.urlretrieve(file_url, os.path.join(tempdir, file_name))
+            text = get_text_file(url_fname)
     return text
-
-
-# def unzip(zip_path, working_dir='.'):
-#     with ZipFile(zip_path, 'r') as zip:
-#         zip.extractall(working_dir)
-#
-#         file_paths = [os.path.join(working_dir, fn) for fn in zip.namelist()]
-#
-#
-# # https://stackoverflow.com/questions/9816816/get-absolute-paths-of-all-files-in-a-directory
-# def absoluteFilePaths(directory):
-#    for dirpath,_,filenames in os.walk(directory):
-#        for f in filenames:
-#            yield os.path.abspath(os.path.join(dirpath, f))
-#
 
 
 def sorted_vals(dict_guy, reverse=False):
@@ -237,17 +258,92 @@ def print_dict(dict_guy, reverse=False, form_func=lambda x: x):
         log.debug("{:30}  {}".format(k, form_func(v)))
 
 
+def read_course_file(course_file_path):
+    id__fields = {}
+    log.debug("reading courses from {}".format(course_file_path))
+    with open(course_file_path, 'rb') as course_file:
+        course_reader = csv.reader(course_file, delimiter='\t', quotechar='"')
+        for row in course_reader:
+            course_id = row[0]
+            course_fields = dict(zip(COURSE_FIELDS, row[1:]))
+            id__fields[course_id] = course_fields
+    log.debug("read fields for {} courses from {}".format(len(id__fields), course_file_path))
+    return id__fields
+
+
+def write_course_file(id__fields, course_file_path, append=True):
+    write_count = 0
+    with open(course_file_path, 'ab' if append else 'wb') as course_file:
+        course_writer = csv.writer(course_file, delimiter='\t', quotechar='"',
+                                   quoting=csv.QUOTE_MINIMAL)
+        for id, fields in id__fields.items():
+            course_writer.writerow([id] + [ fields.get(k, '') for k in COURSE_FIELDS ])
+            write_count += 1
+    log.debug("wrote {} course records to {}".format(write_count, course_file_path))
+    return write_count
+
+
+@contextlib.contextmanager
+def temp_dir(*args, **kwargs):
+    d = tempfile.mkdtemp(*args, **kwargs)
+    try:
+        yield d
+    finally:
+        shutil.rmtree(d)
+
+# with temporary_directory() as temp_dir:
+
 ############################################
 
 if __name__ == '__main__':
 
-    rpp = int(sys.argv[1])
-    max_results = int(sys.argv[2])
+    # rpp = int(sys.argv[1])
+    # max_results = int(sys.argv[2])
+    data_dir = sys.argv[1]
 
+    course_file_name = os.path.join(data_dir, 'courses.tsv')
+
+    rpp = 200
+    max_results = sys.maxint
     results = get_course_listing(rpp, max_results)
     print "got {} results".format(len(results))
 
-    for res_id, res_fields, res_files in results[:5]:
+    for i, (course_id, course_fields, course_files) in enumerate(results):
+        log.debug("course {}/{}".format(i, len(results) - 1))
+
+        for j, (file_name, file_label, file_type, file_url) in enumerate(course_files):
+                log.debug("course {}/{}  file {}/{}".format(i, len(results) - 1,
+                                                            j, len(res_files) - 1))
+                text = get_text_url(file_url)
+
+
+
+
+
+        log.debug("\n")
+
+        write_course_file(id__fields, course_file_path, append=True)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        for res_id, res_fields, res_files in results[:5]:
         print "COURSE", res_id
         for field, val in sorted(res_fields.items()):
             print "\t", field, "->", val
@@ -279,12 +375,6 @@ if __name__ == '__main__':
     # log.debug("mimetypes:")
     # print_dict(mimetype__count, reverse=True)
 
-    for i, (res_id, res_fields, res_files) in enumerate(results):
-        log.debug("course {}/{}".format(i, len(results)-1))
-        for j, (file_name, file_label, file_type, file_url) in enumerate(res_files):
-            log.debug("course {}/{}  file {}/{}".format(i, len(results) - 1, j, len(res_files)-1))
-            text = get_text_url(file_url)
-        log.debug("\n")
 
 
     log.debug("file exts:")
