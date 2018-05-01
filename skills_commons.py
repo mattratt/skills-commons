@@ -6,24 +6,40 @@ import shutil
 import os
 import tempfile
 import logging
+import logging.config
 import os.path
 import xml.etree.ElementTree as ET
 import textract
 from zipfile import ZipFile, BadZipfile
 
 
-logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(message)s")
+# logging.config.dictConfig({ 'version': 1, 'disable_existing_loggers': True })
+# logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+# logging.basicConfig(level=logging.WARN)
+log = logging.getLogger(__name__)
+log.setLevel(logging.DEBUG)
+ch = logging.StreamHandler()
+ch.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+ch.setFormatter(formatter)
+log.addHandler(ch)
 
 
 BASE_URL = 'https://www.skillscommons.org'
 SEARCH_URL = BASE_URL + '/discover?filtertype=type&filter_relational_operator=equals' + \
              '&filter=Online+Course&sort_by=dc.date.issued_dt&order=asc&rpp={}&page={}&XML'
 SEARCH_RPP = 400
-SKIP_FILE_EXTS = {'.png', '.gif', '.jpg', '.bmp',
+EXT_BLACKLIST = {'.png', '.gif', '.jpg', '.bmp',
                   '.swf', '.mp3', '.mp4', '.m4v', '.mpg', '.mov', '.wmv' 
                   '.dll', '.exe',
                   '.thmx', '.accdb',
                   '.xml', '.css', '.js', '.cpp', '.jar'}
+EXT_WHITELIST = {'.csv', '.doc', '.docx', '.eml', '.epub', '.gif', '.htm', '.html',
+                 '.jpeg', '.jpg', '.json', '.log', '.mp3', '.msg', '.odt', '.ogg',
+                 '.pdf', '.png', '.pptx', '.ps', '.psv', '.rtf', '.tff', '.tif',
+                 '.tiff', '.tsv', '.txt', '.wav', '.xls', '.xlsx',
+                 '.zip', '.imscc'}  # all but the last two come from textract; the zips we handle
+
 
 def get_course_search_url(rpp, page):
     return SEARCH_URL.format(rpp, page)
@@ -143,39 +159,40 @@ def get_text_file(file_path):
     ret_text = None
 
     _, ext = os.path.splitext(file_path.lower())
-    # logging.debug("\t\texamining {} ({})".format(file_path, ext))
+    log.debug("\t\texamining {} ({})".format(file_path, ext))
 
     # if file_path.lower().endswith('.zip') or file_path.lower().endswith('.imscc'):
     if (ext == '.zip') or (ext == '.imscc'):
         zip_file_texts = ""
         tempdir = tempfile.mkdtemp()
-        # logging.debug("\t\tunzipping {} to {}".format(file_path, tempdir))
+        log.debug("\t\tunzipping {} to {}".format(file_path, tempdir))
         with ZipFile(file_path, 'r') as zip:
             zip.extractall(tempdir)
             zip_file_paths = [ os.path.join(tempdir, fn) for fn in zip.namelist() ]
 
             for zip_file_path in zip_file_paths:
+                log.debug("\t\trecursive get_text_file(" + zip_file_path + ")")
                 text = get_text_file(zip_file_path)
                 if text:
                     zip_file_texts += text + "\n"
         shutil.rmtree(tempdir)
         ret_text = zip_file_texts
 
-    elif ext in SKIP_FILE_EXTS:
+    elif (ext in EXT_BLACKLIST) or (ext not in EXT_WHITELIST):
         tally_file_info(file_path)
-        # logging.debug("\t\tskipping (ext) {}".format(file_path))
+        # log.debug("\t\tskipping (ext) {}".format(file_path))
 
     else:
         tally_file_info(file_path)
-        # logging.debug("\t\textracting text from {}".format(file_path))
+        log.debug("\t\textracting text from {}".format(file_path))
         try:
             ret_text = textract.process(file_path)
         except (textract.exceptions.ExtensionNotSupported, textract.exceptions.ShellError) as err:
-            # logging.debug("\t\tcan't extract file file {}".format(file_path))
-            logging.debug("\t\tcan't extract file file {}: {}".format(file_path, err))
+            # log.debug("\t\tcan't extract file file {}".format(file_path))
+            log.debug("\t\tcan't extract file file {}: {}".format(file_path, err))
             tally_file_errors(file_path)
         except (IOError, TypeError, BadZipfile) as err:
-            logging.debug("\t\tcan't extract file file {}: {}".format(file_path, err))
+            log.debug("\t\tcan't extract file file {}: {}".format(file_path, err))
             tally_file_errors(file_path)
     return ret_text
 
@@ -185,10 +202,10 @@ def get_text_url(file_url):
     _, file_name = os.path.split(urlparse.urlsplit(file_url).path)
 
     _, ext = os.path.splitext(file_name.lower())
-    if ext in SKIP_FILE_EXTS:
-        logging.debug("\t\tskipping (ext) {} => {}".format(file_url, file_name))
+    if (ext in EXT_BLACKLIST) or (ext not in EXT_WHITELIST):
+        log.debug("\t\tskipping (ext) {} => {}".format(file_url, file_name))
     else:
-        logging.debug("\t\tdownloading {} => {}".format(file_url, file_name))
+        log.debug("\t\tdownloading {} => {}".format(file_url, file_name))
         url_fname, url_headers = urllib.urlretrieve(file_url, os.path.join(tempdir, file_name))
         text = get_text_file(url_fname)
 
@@ -217,7 +234,7 @@ def sorted_vals(dict_guy, reverse=False):
 
 def print_dict(dict_guy, reverse=False, form_func=lambda x: x):
     for k, v in sorted_vals(dict_guy, reverse=reverse):
-        logging.debug("{:30}  {}".format(k, form_func(v)))
+        log.debug("{:30}  {}".format(k, form_func(v)))
 
 
 ############################################
@@ -245,7 +262,7 @@ if __name__ == '__main__':
         for key, val in res_fields.items():
             if val is not None:
                 res_field__count[key] = res_field__count.get(key, 0) + 1
-    logging.debug("field counts:")
+    log.debug("field counts:")
     # print_dict(res_field__count, reverse=True)
     res_field__perc = { k:float(v)/len(results) for k, v in res_field__count.items() }
     print_dict(res_field__perc, reverse=True, form_func=lambda p: '{:.4f}'.format(p))
@@ -259,18 +276,18 @@ if __name__ == '__main__':
     #         _, ext = os.path.splitext(file_name)
     #         file_ext__count[ext] = file_ext__count.get(ext, 0) + 1
     #
-    # logging.debug("mimetypes:")
+    # log.debug("mimetypes:")
     # print_dict(mimetype__count, reverse=True)
 
     for i, (res_id, res_fields, res_files) in enumerate(results):
-        logging.debug("course {}/{}".format(i, len(results)-1))
+        log.debug("course {}/{}".format(i, len(results)-1))
         for j, (file_name, file_label, file_type, file_url) in enumerate(res_files):
-            logging.debug("course {}/{}  file {}/{}".format(i, len(results) - 1, j, len(res_files)-1))
+            log.debug("course {}/{}  file {}/{}".format(i, len(results) - 1, j, len(res_files)-1))
             text = get_text_url(file_url)
-        logging.debug("\n")
+        log.debug("\n")
 
 
-    logging.debug("file exts:")
+    log.debug("file exts:")
     print_dict(file_ext__count, reverse=True)
 
 
