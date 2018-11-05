@@ -17,7 +17,7 @@ def create_all_tables(conn, overwrite=False):
         drop_table(curs, 'courses')
         drop_table(curs, 'files')
 
-    course_col_tups = [('course_id', 'VARCHAR(128)')]
+    course_col_tups = [('course_id', 'VARCHAR(128)'), ('course_type', 'VARCHAR(128)')]
     for field_name in sc.COURSE_FIELDS:
         col_name = field_name.replace(' ', '_')
         col_type = 'VARCHAR(256)'
@@ -52,22 +52,6 @@ def drop_table(curs, table_name):
     curs.execute(sql)
 
 
-# def insert_row(curs, table_name, col__val):
-#     col_val_tups = col__val.items()
-#     cols = [ t[0] for t in col_val_tups ]
-#     vals = [ t[1] for t in col_val_tups ]
-#     sql = "INSERT INTO " + table_name + " ("
-#     sql += ", ".join(cols)
-#     sql += ") VALUES ("
-#     sql += ", ".join(["%s"]*len(vals))
-#     sql += ")"
-#     try:
-#         curs.execute(sql, vals)
-#     except Exception as err:
-#         log.warning("error inserting record: {} {}".format(sql, vals))
-#         raise err
-
-
 def insert_course_rows_from_file(curs, course_info_path):
     log.debug("inserting courses from {}".format(course_info_path))
     sql = "INSERT INTO courses VALUES (%s, "
@@ -89,16 +73,15 @@ def insert_course_rows_from_file(curs, course_info_path):
     return insert_count
 
 
-def insert_course_row(curs, course_id, field__val):
-    params = [course_id]
+def insert_course_row(curs, course_id, course_type, field__val):
+    params = [course_id, course_type]
     for field in sc.COURSE_FIELDS:
         val = field__val.get(field)
         if val is None:
             params.append(None)
         else:
             params.append(' '.join(val.split()))
-
-    sql = "INSERT INTO courses VALUES (%s, "
+    sql = "INSERT INTO courses VALUES (%s, %s, "
     sql += ", ".join(['%s']*len(sc.COURSE_FIELDS))
     sql += ")"
     curs.execute(sql, params)
@@ -151,14 +134,22 @@ def get_processed_course_ids(curs):
     return { row[0] for row in curs.fetchall() }
 
 
+def get_course_text(conn):
+    curs = conn.cursor()
+    sql = "SELECT course_id, file_name, text FROM files WHERE text IS NOT NULL"
+    curs.execute(sql)
+    return curs.fetchall()
+
+
 #####################################
 
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Import Skills Commons data into relational db')
     parser.add_argument('host')
-    parser.add_argument('db')  # skillscomm2
+    parser.add_argument('db')
     parser.add_argument('user', help='username for db')
+    parser.add_argument('course_type', help='type of course', choices=['online', 'blended'])
     parser.add_argument('--courses_path', help='path of course data tsv')
     parser.add_argument('--files_path', help='path of files data tsv')
     parser.add_argument('--create_db', help='erase and create new tables', action='store_true')
@@ -194,7 +185,7 @@ if __name__ == '__main__':
     #                     help='continue (skip courses already proessed)')
     # args = parser.parse_args()
 
-    results = sc.get_course_listing('online', sc.SEARCH_RPP, sys.maxint)
+    results = sc.get_course_listing(args.course_type, sc.SEARCH_RPP, sys.maxint)
     print "got {} results".format(len(results))
 
     processed = get_processed_course_ids(curs)
@@ -212,14 +203,7 @@ if __name__ == '__main__':
                                                         j, len(course_files) - 1))
             file_name__text.update(sc.get_text_url(file_url))
 
-        # for file_name, text in sorted(file_name__text.items()):
-        #     try:
-        #         log.debug("\t{} ({})".format(file_name.encode('ascii', 'ignore'),
-        #                                      len(text) if text is not None else 0))
-        #     except Exception as err:
-        #         continue
-
-        insert_course_row(curs, course_id, course_fields)
+        insert_course_row(curs, course_id, args.course_type, course_fields)
         for file_name, text in file_name__text.items():
             try:
                 insert_file_row(curs, course_id, file_name, text)
@@ -228,27 +212,3 @@ if __name__ == '__main__':
             conn.commit()
 
         log.debug("\n")
-
-
-
-
-    # SQL QUERIES:
-    # file type distrib overall for all files
-    # number of courses with at least one type x, y, z, ...
-    # distrib of text amount for each course
-
-
-    # PYTHON text:
-    # file type distrib for top-level files
-
-    # PYTHON graphical:
-    # distrib of overall file count for each course
-    # distrib of count of each file type for each course
-
-    # some notion of topics of text for each course
-
-
-
-
-
-

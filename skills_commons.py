@@ -123,7 +123,7 @@ def get_course_search_url(course_type, rpp, page):
     if course_type.lower() == 'online':
         typ = 'Online+Course'
     elif course_type.lower() in {'blended', 'hybrid'}:
-        type = 'Hybrid%2FBlended+Course'
+        typ = 'Hybrid%2FBlended+Course'
     else:
         raise Exception("Bad course type: {} (must be 'online' or 'blended')".format(course_type))
 
@@ -158,11 +158,8 @@ def get_course_listing(course_type, rpp=SEARCH_RPP, max_res=sys.maxint, page=1):
     response = urllib2.urlopen(url)
     xml_raw = response.read()
     xml_parsed = ET.fromstring(xml_raw)
-    # print_tag_tree(xml_parsed)
-    # print_children_tags(xml_parsed)
 
     xml_results = xml_parsed.find('alchemy/results')
-    # print_children_tags(xml_results)
 
     results = []  # (id, fields { name->val }, files [ (name, lab, type, url) ])
     for xml_result in xml_results.findall('{http://www.loc.gov/METS/}METS'):
@@ -173,12 +170,10 @@ def get_course_listing(course_type, rpp=SEARCH_RPP, max_res=sys.maxint, page=1):
         res_files = []
         xml_filesec = xml_result.find('{http://www.loc.gov/METS/}fileSec')
         for xml_filegrp in xml_filesec:
-            # print xml_filegrp.tag, xml_filegrp.attrib
             for xml_file in xml_filegrp.findall('{http://www.loc.gov/METS/}file'):
                 file_type = xml_file.attrib.get('MIMETYPE')
 
                 xml_file_loc = xml_file.find('{http://www.loc.gov/METS/}FLocat')
-                # print "FILE LOC: ", xml_file_loc.tag, xml_file_loc.attrib
 
                 file_name = xml_file_loc.attrib.get('{http://www.w3.org/TR/xlink/}title')
                 file_label = xml_file_loc.attrib.get('{http://www.w3.org/TR/xlink/}label')
@@ -214,15 +209,10 @@ def tally_file_errors(file_name):
 # zips), it collects the text from each sub-file into a dict
 def get_text_file(file_dir, file_name):
     file_path = os.path.join(file_dir, file_name)
-    # ret_text = None
     filepath__text = {}
 
     _, ext = os.path.splitext(file_path.lower())
-    # log.debug("\t\texamining {} ({})".format(file_path, ext))
-
-    # if file_path.lower().endswith('.zip') or file_path.lower().endswith('.imscc'):
     if (ext == '.zip') or (ext == '.imscc'):
-        # zip_file_texts = ""
         try:
             with temp_dir() as tempdir, ZipFile(file_path, 'r') as zip:
 
@@ -231,53 +221,30 @@ def get_text_file(file_dir, file_name):
                     _, zext = os.path.splitext(zfn.lower())
 
                     if (zext in EXT_BLACKLIST) or (zext not in EXT_WHITELIST):
-                        # log.debug("\t\tskipping {} ({})".format(zfn, zext))
                         filepath__text[zfn] = None
                     else:
-                        # log.debug("\t\tunzip {} ({})".format(zfn, zext))
                         text_file_names.append(zfn)
 
                 log.debug("\t\tunzipping {} to {}".format(file_path, tempdir))
                 zip.extractall(tempdir, text_file_names)
 
-                # zip.extractall(tempdir)
-                # zip_file_paths = [ os.path.join(tempdir, fn) for fn in zip.namelist() ]
-                # for zip_file_path in zip_file_paths:
-                # for fn in zip.namelist():
                 for fn in text_file_names:
-                    # zip_file_path = os.path.join(tempdir, fn)
-                    # log.debug("\t\trecursive get_text_file(" + zip_file_path + ")")
-                    # text = get_text_file(zip_file_path)
-                    # if text:
-                    #     zip_file_texts += text + "\n"
-
-                    # filepath__text.update(get_text_file(zip_file_path))
                     filepath__text.update(get_text_file(tempdir, fn))
+
         except (BadZipfile, IOError, UnicodeEncodeError) as err:
             tally_file_info(file_path)
             filepath__text[file_name] = None
 
-        # ret_text = zip_file_texts
-
     elif (ext in EXT_BLACKLIST) or (ext not in EXT_WHITELIST):
         tally_file_info(file_path)
-        # log.debug("\t\tskipping (ext) {}".format(file_path))
         filepath__text[file_name] = None
 
     else:
         tally_file_info(file_path)
-        # log.debug("\t\textracting text from {}".format(file_path))
         ret_text = None
         try:
             ret_text = textract.process(file_path)
             ret_text = ' '.join(ret_text.split())
-        # except (textract.exceptions.ExtensionNotSupported, textract.exceptions.ShellError) as err:
-        #     # log.debug("\t\tcan't extract file file {}".format(file_path))
-        #     log.debug("\t\tcan't extract file file {}: {}".format(file_path, err))
-        #     tally_file_errors(file_path)
-        # except (IOError, TypeError, BadZipfile, UnicodeDecodeError) as err:
-        #     log.debug("\t\tcan't extract file file {}: {}".format(file_path, err))
-        #     tally_file_errors(file_path)
         except Exception as err:
             log.debug("\t\tcan't extract file file {}: {}".format(file_path, err))
             tally_file_errors(file_path)
@@ -285,7 +252,6 @@ def get_text_file(file_dir, file_name):
         filepath__text[file_name] = ret_text
 
     return filepath__text
-    # return ret_text
 
 
 def get_text_url(file_url):
@@ -298,7 +264,6 @@ def get_text_url(file_url):
         log.debug("\t\tdownloading {} => {}".format(file_url, file_name))
         with temp_dir() as tempdir:
             url_fname, url_headers = urllib.urlretrieve(file_url, os.path.join(tempdir, file_name))
-            # text = get_text_file(url_fname)
             filepath__text = get_text_file(tempdir, file_name)
     return filepath__text
 
@@ -326,37 +291,7 @@ def read_course_info(course_file_path):
     return id__fields
 
 
-#zzz not currently needed
-# def read_course_infos(course_file_paths):
-#     id__fields = {}
-#     for i, course_file_path in enumerate(course_file_paths):
-#         log.debug("reading courses from {}/{} {}".format(i, len(course_file_paths)-1,
-#                                                          course_file_path))
-#         if os.path.exists(course_file_path):
-#             with open(course_file_path, 'rb') as course_file:
-#                 course_reader = csv.reader(course_file, delimiter='\t', quotechar='"')
-#                 for row in course_reader:
-#                     course_id = row[0]
-#                     course_fields = dict(zip(COURSE_FIELDS, row[1:]))
-#                     id__fields[course_id] = course_fields
-#             log.debug("read fields for {} courses from {}".format(len(id__fields), course_file_path))
-#     return id__fields
-
-
 def write_course_infos(id__fields, course_file_path, append=True):
-    # write_count = 0
-    # with open(course_file_path, 'ab' if append else 'wb') as course_file:
-    #     course_writer = csv.writer(course_file, delimiter='\t', quotechar='"',
-    #                                quoting=csv.QUOTE_MINIMAL)
-    #     for id, fields in id__fields.items():
-    #         course_writer.writerow([id] + [ fields.get(k, '') for k in COURSE_FIELDS ])
-    #         write_count += 1
-    # log.debug("wrote {} course records to {}".format(write_count, course_file_path))
-    # return write_count
-
-    # rows = [ [id] + [ ' '.join(fields.get(k, '').split()) for k in COURSE_FIELDS ]
-    #         for id, fields in id__fields.items() ]
-
     rows = []
     for fid, fields in id__fields.items():
         row = [fid]
@@ -422,9 +357,6 @@ def chunks(lst, chunk_size):
     for i in xrange(0, len(lst), chunk_size):
         yield lst[i:i+chunk_size]
 
-
-CHUNK_SIZE = 100
-NUM_JOBS = 4
 
 ############################################
 
@@ -500,108 +432,6 @@ if __name__ == '__main__':
         write_file_infos(course_id, file_name__text, file_info_path, append=True)
 
         log.debug("\n")
-
-
-
-    #zzz UNFINISHED package up downloading/extracting into a func so joblib can parallelize
-    # def read_course_files(course_id, course_fields, course_files):
-    #     file_name__text = {}
-    #     for j, (file_name, file_label, file_type, file_url) in enumerate(course_files):
-    #         log.debug("course {}/{}  file {}/{}".format(i, len(results) - 1,
-    #                                                     j, len(course_files) - 1))
-    #         file_name__text.update(get_text_url(file_url))
-    #
-    #     for file_name, text in sorted(file_name__text.items()):
-    #         try:
-    #             log.debug("\t{} ({})".format(file_name.encode('ascii', 'ignore'),
-    #                                          len(text) if text is not None else 0))
-    #         except Exception as err:
-    #             continue
-    #
-    #     write_course_infos({ course_id: course_fields }, course_info_path, append=True)
-    #     write_file_infos(course_id, file_name__text, file_info_path, append=True)
-    #
-    #     log.debug("\n")
-    #
-    # for results_chunk in chunks(results, CHUNK_SIZE):
-    #     # Parallel(n_jobs=2)(delayed(sqrt)(i ** 2) for i in range(10))
-    #     Parallel(n_jobs=NUM_JOBS)(delayed(read_course_files)(c_id, c_fields, c_files) for
-    #                               c_id, c_fields, c_files in results_chunk)
-
-
-    # file type distrib overall for all files
-    # file type distrib for top-level files
-    # number of courses with at least one type x, y, z, ...
-    # distrib of overall file count for each course
-    # distrib of count of each file type for each course
-    # distrib of text amount for each course
-    # some notion of topics of text for each course
-
-    # ? can we get metadata about downloads?
-
-    #     for res_id, res_fields, res_files in results[:5]:
-    #     print "COURSE", res_id
-    #     for field, val in sorted(res_fields.items()):
-    #         print "\t", field, "->", val
-    #     print "\tfiles:"
-    #     for file_tup in res_files:
-    #         print "\t\t", file_tup
-    #     print "\n"
-    #
-    # # find which results fields keys are present
-    # res_field__count = {}
-    # for res_id, res_fields, res_files in results:
-    #     for key, val in res_fields.items():
-    #         if val is not None:
-    #             res_field__count[key] = res_field__count.get(key, 0) + 1
-    # log.debug("field counts:")
-    # # print_dict(res_field__count, reverse=True)
-    # res_field__perc = { k:float(v)/len(results) for k, v in res_field__count.items() }
-    # print_dict(res_field__perc, reverse=True, form_func=lambda p: '{:.4f}'.format(p))
-    #
-    # # # file type counts
-    # # mimetype__count = {}
-    # # file_ext__count = {}
-    # # for res_id, res_fields, res_files in results:
-    # #     for file_name, file_label, file_type, file_url in res_files:
-    # #         mimetype__count[file_type] = mimetype__count.get(file_type, 0) + 1
-    # #         _, ext = os.path.splitext(file_name)
-    # #         file_ext__count[ext] = file_ext__count.get(ext, 0) + 1
-    # #
-    # # log.debug("mimetypes:")
-    # # print_dict(mimetype__count, reverse=True)
-    #
-    #
-    #
-    # log.debug("file exts:")
-    # print_dict(file_ext__count, reverse=True)
-    #
-    #
-    # file_err_percs = { k: float(file_ext__err_count.get(k, 0))/count
-    #                    for k, count in file_ext__count.items() }
-    # print_dict(file_err_percs)
-    #
-    #
-    # #
-    # # mimetype__count = {}
-    # # for res_id, res_fields, res_files in results:
-    # #     for file_name, file_label, file_type, file_url in res_files:
-    # #         mimetype__count[file_type] = mimetype__count.get(file_type, 0) + 1
-    # #
-    # #
-    # #         print "FILE:", file_name, file_type, file_url
-    # #         text = get_file_text(file_name, file_url)
-    # #         print "TEXT:", text[:500]
-    # #         print "\n"
-    # #
-    # #
-    # #
-    # # for mimetype, count in sorted(mimetype__count.items(), key=lambda x: x[1], reverse=True):
-    # #     print mimetype, count
-    #
-    #
-
-
 
 
 
